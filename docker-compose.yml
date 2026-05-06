@@ -7,7 +7,7 @@ services:
     container_name: stocks-mcp
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8400:8000"
     environment:
       - PYTHONUNBUFFERED=1
     healthcheck:
@@ -16,9 +16,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-    networks:
-      - npm_default          # ← réseau de ton Nginx Proxy Manager
-
-networks:
-  npm_default:
-    external: true           # réseau existant de NPM

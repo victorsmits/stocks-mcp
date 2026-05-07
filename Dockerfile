@@ -10,7 +10,8 @@ COPY my_server.py ./
 
 RUN pip install --no-cache-dir --break-system-packages \
     "fastmcp>=2.2.5" \
-    "yfinance>=0.2.50"
+    "yfinance>=0.2.50" \
+    "aiohttp>=3.11.0"
 
 EXPOSE 8000
 

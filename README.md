@@ -9,7 +9,8 @@ des analyses de portefeuille et une mémoire persistante PostgreSQL.
 - indicateurs techniques, comparaisons et screener ;
 - analyse de portefeuille ;
 - snapshots versionnés du portefeuille dans PostgreSQL ;
-- transactions, thèses d'investissement, watchlist et journal de décisions ;
+- transactions confirmées, thèses d'investissement, watchlist et journal de décisions ;
+- mise à jour atomique transaction + nouvel état du portefeuille ;
 - accès protégé par Google OAuth via oauth2-proxy ;
 - liste blanche stricte des adresses Google autorisées.
 
@@ -87,28 +88,45 @@ Ne commitez jamais le fichier `.env` ni une sauvegarde PostgreSQL.
 - `get_portfolio_snapshot()`
 - `get_portfolio_history(limit)`
 
-### Transactions
+### Transaction confirmée et évolution automatique
 
-- `add_portfolio_transaction(transaction)`
+Utilisez :
+
+- `apply_confirmed_portfolio_transaction(transaction, updated_snapshot, note)`
 - `get_portfolio_transactions(limit, ticker)`
 
-Une transaction doit contenir au minimum :
+Cet outil refuse toute transaction dont `confirmed` n'est pas strictement égal
+à `true`. La transaction et le nouvel état complet sont enregistrés dans une
+même transaction PostgreSQL : soit les deux sont sauvegardés, soit aucun ne
+l'est.
+
+Exemple :
 
 ```json
 {
-  "trade_date": "2026-07-16",
-  "ticker": "NVDA",
-  "side": "buy",
-  "quantity": 5,
-  "price": 170.0,
-  "currency": "USD",
-  "fees": 7.5,
-  "confirmed": true
+  "transaction": {
+    "trade_date": "2026-07-16",
+    "ticker": "NVDA",
+    "side": "buy",
+    "quantity": 5,
+    "price": 170.0,
+    "currency": "USD",
+    "fees": 7.5,
+    "confirmed": true
+  },
+  "updated_snapshot": {
+    "as_of": "2026-07-16T13:30:00+02:00",
+    "base_currency": "EUR",
+    "holdings": {
+      "NVDA": {"quantity": 117, "currency": "USD"}
+    }
+  }
 }
 ```
 
-Les écritures doivent uniquement concerner des transactions confirmées. Une
-simulation ne doit jamais être enregistrée comme une opération réelle.
+Le GPT doit d'abord lire le snapshot actuel, calculer le nouvel état à partir de
+la transaction confirmée, puis appeler cet outil. Une simulation ne doit jamais
+être enregistrée comme une opération réelle.
 
 ### Thèses, watchlist et décisions
 
@@ -131,7 +149,7 @@ Python 3.13 est requis.
 ```bash
 uv sync
 export DATABASE_URL='postgresql://stocks:password@localhost:5432/stocks'
-uv run my_server.py
+uv run persistent_server_v2.py
 ```
 
 ## Format des tickers

@@ -1,119 +1,175 @@
 # Stock Information MCP Server
 
-This project provides a simple MCP (Modular Command Protocol) server and client for fetching stock information from Google Finance.
+MCP financier basé sur FastMCP et yfinance. Il fournit des données de marché,
+des analyses de portefeuille et une mémoire persistante PostgreSQL.
 
-This project is built using [FastMCP](https://gofastmcp.com/getting-started/welcome), a Pythonic framework that simplifies the creation of MCP servers and clients. FastMCP handles all the complex protocol details and server management, allowing for clean and intuitive implementation of MCP tools.
+## Fonctionnalités
 
-## Features
+- cours, historiques, fondamentaux, dividendes et actualités ;
+- indicateurs techniques, comparaisons et screener ;
+- analyse de portefeuille ;
+- snapshots versionnés du portefeuille dans PostgreSQL ;
+- transactions confirmées, thèses d'investissement, watchlist et journal de décisions ;
+- mise à jour atomique transaction + nouvel état du portefeuille ;
+- accès protégé par Google OAuth via oauth2-proxy ;
+- liste blanche stricte des adresses Google autorisées.
 
-- Fetch real-time stock prices from Google Finance
-- Get company descriptions 
-- Simple command-line interface
-- Easy to integrate with other applications
+## Démarrage sécurisé avec Docker Compose
 
-## Installation
+### 1. Préparer l'environnement
 
-1. Clone this repository:
-   ```
-   git clone https://github.com/natifridman/stocks-mcp.git
-   cd stocks-mcp
-   ```
+```bash
+cp .env.example .env
+```
 
-2. Install the required dependencies:
+Renseignez les mots de passe et identifiants OAuth dans `.env`.
 
-   **Using uv (recommended):**
-   ```
-   uv sync
-   source .venv/bin/activate
-   ```
-   This will create a virtual environment, install all dependencies from the lock file, and activate the environment.
+### 2. Créer les identifiants Google OAuth
 
-   **Or using pip:**
-   ```
-   pip install fastmcp aiohttp beautifulsoup4
-   ```
+Dans Google Cloud Console :
 
-## Usage
+1. créez ou sélectionnez un projet ;
+2. configurez l'écran de consentement OAuth ;
+3. créez un client OAuth de type **Web application** ;
+4. ajoutez comme URI de redirection autorisée :
+   `https://votre-domaine.example/oauth2/callback` ;
+5. copiez le Client ID et le Client Secret dans `.env`.
 
-### Starting the Server
+Pour un déploiement local HTTP, utilisez par exemple :
+`http://localhost:8400/oauth2/callback` et définissez
+`OAUTH2_PROXY_COOKIE_SECURE=false`.
 
-1. Run the server in a terminal:
-   ```
-   uv run my_server.py
-   ```
-   The server will start and display a message like: "Starting server 'Stock Information MCP Server'..."
+### 3. Restreindre les comptes autorisés
 
-2. Keep this terminal open while using the client.
+Éditez `config/allowed-emails.txt` et placez une adresse Google autorisée par
+ligne. Supprimez impérativement l'adresse d'exemple.
 
-### Using the Client
+```text
+victor@example.com
+```
 
-The client can be used in several ways:
+Même si le domaine OAuth est `*`, oauth2-proxy refusera les comptes absents de
+ce fichier.
 
-1. **With Command Line Arguments**:
-   ```
-   uv run my_client.py IBM:NYSE
-   ```
-   Replace `IBM:NYSE` with your desired stock ticker.
+### 4. Lancer
 
-2. **Interactive Mode**:
-   ```
-   uv run my_client.py
-   ```
-   Then enter the ticker when prompted.
+```bash
+docker compose up -d --build
+```
 
-### Stock Ticker Format
+Le conteneur MCP et PostgreSQL ne sont pas publiés directement. Seul
+oauth2-proxy écoute sur `PUBLIC_PORT` et impose l'authentification Google avant
+de transmettre les requêtes au MCP.
 
-Use the format `TICKER:EXCHANGE` for best results:
+## Variables principales
 
-- `AAPL:NASDAQ` - Apple
-- `MSFT:NASDAQ` - Microsoft
-- `TSLA:NASDAQ` - Tesla
-- `AMZN:NASDAQ` - Amazon
-- `GOOGL:NASDAQ` - Google/Alphabet
-- `IBM:NYSE` - IBM
-- `DIS:NYSE` - Disney
+| Variable | Description |
+|---|---|
+| `POSTGRES_PASSWORD` | mot de passe PostgreSQL |
+| `GOOGLE_CLIENT_ID` | identifiant du client OAuth Google |
+| `GOOGLE_CLIENT_SECRET` | secret OAuth Google |
+| `OAUTH2_REDIRECT_URL` | URL publique `/oauth2/callback` |
+| `OAUTH2_PROXY_COOKIE_SECRET` | secret de chiffrement des cookies |
+| `PUBLIC_PORT` | port public d'oauth2-proxy, 8400 par défaut |
 
-## Adding MCP Config in VS Code or Cursor
+Générez le secret cookie avec :
 
-To use this MCP tool in your editor:
+```bash
+openssl rand -base64 32 | tr -- '+/' '-_'
+```
 
-1. **Cursor Configuration**:
-   - Open or create the MCP configuration file at `~/.cursor/mcp.json`
-   - Add the following configuration:
-   ```json
-   {
-     "mcpServers": {
-       "stock-info": {
-         "command": "/path/to/your/stocks-mcp/.venv/bin/python",
-         "args": ["/path/to/your/stocks-mcp/my_server.py"]
-       }
-     }
-   }
-   ```
-   - Replace `/path/to/your/` with your actual project path
+Ne commitez jamais le fichier `.env` ni une sauvegarde PostgreSQL.
 
-2. **VS Code Configuration**:
-   - For VS Code, the configuration format might vary depending on the extension you're using
+## Outils de mémoire du portefeuille
 
+### Portefeuille
 
-## API Reference
+- `save_portfolio_snapshot(snapshot, source, note)`
+- `get_portfolio_snapshot()`
+- `get_portfolio_history(limit)`
 
-### Server Tools
+### Transaction confirmée et évolution automatique
 
-The server provides the following tool:
+Utilisez :
 
-- `get_stock_info(ticker: str)`: Returns stock information including price and description
+- `apply_confirmed_portfolio_transaction(transaction, updated_snapshot, note)`
+- `get_portfolio_transactions(limit, ticker)`
 
-### Client Functions
+Cet outil refuse toute transaction dont `confirmed` n'est pas strictement égal
+à `true`. La transaction et le nouvel état complet sont enregistrés dans une
+même transaction PostgreSQL : soit les deux sont sauvegardés, soit aucun ne
+l'est.
 
-- `get_stock_info(ticker: str)`: Fetches and displays stock information
+Exemple :
 
-## Troubleshooting
+```json
+{
+  "transaction": {
+    "trade_date": "2026-07-16",
+    "ticker": "NVDA",
+    "side": "buy",
+    "quantity": 5,
+    "price": 170.0,
+    "currency": "USD",
+    "fees": 7.5,
+    "confirmed": true
+  },
+  "updated_snapshot": {
+    "as_of": "2026-07-16T13:30:00+02:00",
+    "base_currency": "EUR",
+    "holdings": {
+      "NVDA": {"quantity": 117, "currency": "USD"}
+    }
+  }
+}
+```
 
-- Make sure the server is running before using the client
-- Check your internet connection if stock data isn't loading
-- Verify the ticker symbol format is correct
+Le GPT doit d'abord lire le snapshot actuel, calculer le nouvel état à partir de
+la transaction confirmée, puis appeler cet outil. Une simulation ne doit jamais
+être enregistrée comme une opération réelle.
 
-## License
+### Thèses, watchlist et décisions
 
-This project is licensed under the GNU General Public License v3.0 (GPL-3.0) - see the [LICENSE](LICENSE) file for details.
+- `update_investment_thesis(ticker, thesis)`
+- `get_investment_thesis(ticker)`
+- `update_watchlist_entry(ticker, entry)`
+- `get_watchlist_entry(ticker)`
+- `append_decision_journal(action, entry, ticker)`
+
+## Source complémentaire
+
+Les données yfinance et les calculs du MCP sont des sources complémentaires.
+Pour une décision importante, croisez-les avec les documents officiels de
+l'émetteur, les données du courtier et les sources réglementaires.
+
+## Développement sans Docker
+
+Python 3.13 est requis.
+
+```bash
+uv sync
+export DATABASE_URL='postgresql://stocks:password@localhost:5432/stocks'
+uv run persistent_server_v2.py
+```
+
+## Format des tickers
+
+- `AAPL:NASDAQ`
+- `MSFT:NASDAQ`
+- `IBM:NYSE`
+- `AIR.PA`
+- `ASML.AS`
+- `ABI.BR`
+
+## Sécurité
+
+- N'exposez jamais directement le port 8000 du serveur MCP.
+- Utilisez HTTPS en production.
+- Limitez `config/allowed-emails.txt` à vos comptes personnels.
+- Utilisez des secrets longs et distincts.
+- Sauvegardez PostgreSQL de manière chiffrée.
+- Les outils d'écriture ne doivent être appelés qu'après confirmation explicite.
+
+## Licence
+
+GNU General Public License v3.0 — voir `LICENSE`.

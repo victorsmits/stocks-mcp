@@ -1,0 +1,3 @@
+# One authorized Google account per line.
+# Replace this placeholder before deployment.
+votre-adresse@gmail.com

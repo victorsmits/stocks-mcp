@@ -1,12 +1,12 @@
 [project]
 name = "stocks-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Authenticated stock research MCP server with persistent portfolio memory"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.13.4",
-    "fastmcp>=2.2.5",
+    "fastmcp>=3.4.4",
     "aiohttp>=3.11.0",
     "numpy>=2.0",
     "pandas>=2.2",

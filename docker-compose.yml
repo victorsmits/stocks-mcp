@@ -21,11 +21,19 @@ services:
       dockerfile: Dockerfile
     container_name: stocks-mcp
     restart: unless-stopped
-    expose:
-      - "8000"
+    ports:
+      - "${PUBLIC_PORT:-8400}:8000"
     environment:
       PYTHONUNBUFFERED: "1"
       DATABASE_URL: postgresql://${POSTGRES_USER:-stocks}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stocks}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?set MCP_PUBLIC_URL in .env}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in .env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in .env}
+      MCP_JWT_SIGNING_KEY: ${MCP_JWT_SIGNING_KEY:?set MCP_JWT_SIGNING_KEY in .env}
+      ALLOWED_GOOGLE_EMAILS: ${ALLOWED_GOOGLE_EMAILS:?set ALLOWED_GOOGLE_EMAILS in .env}
+      FASTMCP_HOME: /var/lib/fastmcp
+    volumes:
+      - stocks_fastmcp_data:/var/lib/fastmcp
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,36 +48,6 @@ services:
       retries: 10
       start_period: 20s
 
-  oauth2-proxy:
-    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
-    container_name: stocks-oauth2-proxy
-    restart: unless-stopped
-    ports:
-      - "${PUBLIC_PORT:-8400}:4180"
-    environment:
-      OAUTH2_PROXY_PROVIDER: google
-      OAUTH2_PROXY_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      OAUTH2_PROXY_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
-      OAUTH2_PROXY_COOKIE_SECURE: ${OAUTH2_PROXY_COOKIE_SECURE:-true}
-      OAUTH2_PROXY_COOKIE_SAMESITE: lax
-      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
-      OAUTH2_PROXY_UPSTREAMS: http://stocks-mcp:8000
-      OAUTH2_PROXY_REDIRECT_URL: ${OAUTH2_REDIRECT_URL}
-      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
-      OAUTH2_PROXY_AUTHENTICATED_EMAILS_FILE: /etc/oauth2-proxy/allowed-emails.txt
-      OAUTH2_PROXY_REVERSE_PROXY: "true"
-      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
-      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
-      OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER: "true"
-      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
-      OAUTH2_PROXY_PROXY_WEBSOCKETS: "true"
-      OAUTH2_PROXY_FLUSH_INTERVAL: 1s
-    volumes:
-      - ./config/allowed-emails.txt:/etc/oauth2-proxy/allowed-emails.txt:ro
-    depends_on:
-      stocks-mcp:
-        condition: service_healthy
-
 volumes:
   stocks_postgres_data:
+  stocks_fastmcp_data:
